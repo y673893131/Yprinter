@@ -68,7 +68,10 @@ bool CWinPrinter::printText(std::string sText, int nPaperSize)
 	DWORD szLength = 0;
 	::GetDefaultPrinterA(szDefault, &szLength);
 	if (!::SetDefaultPrinterA(m_sPrinter.c_str()))
+	{
+		printf("set defalut device failed, %s\n", m_sPrinter.c_str());
 		return false;
+	}
 
 	PRINTDLG dlg;
 	ZeroMemory(&dlg, sizeof(dlg));
@@ -79,6 +82,7 @@ bool CWinPrinter::printText(std::string sText, int nPaperSize)
 	DWORD rst = CommDlgExtendedError();//看看出错没有   
 	if (rst != 0)
 	{
+		printf("CommDlgExtendedError failed, %d[%d]\n", rst, GetLastError());
 		dlg.Flags = 0;
 		PrintDlg(&dlg);//弹出对话框自行选择
 	}
@@ -112,5 +116,48 @@ bool CWinPrinter::printText(std::string sText, int nPaperSize)
 	DeleteObject(font);
 	DeleteDC(dlg.hDC);
 	::SetDefaultPrinterA(szDefault);
+	return true;
+}
+
+bool CWinPrinter::printText1(std::string sText, int nPaperSize)
+{
+	HANDLE hdl;
+	DEVMODEA* devmode;
+	OpenPrinterA((LPSTR)m_sPrinter.c_str(), &hdl, NULL);
+	int size = DocumentPropertiesA(NULL, hdl, (LPSTR)m_sPrinter.c_str(), NULL, NULL, 0);
+	devmode = (DEVMODEA*)malloc(size);
+	DocumentPropertiesA(NULL, hdl, (LPSTR)m_sPrinter.c_str(), devmode, NULL, DM_OUT_BUFFER);
+	HDC printerDC = CreateDCA("WINSPOOL", (LPCSTR)devmode->dmDeviceName, NULL, devmode);
+	
+	DOCINFOA di = { sizeof(DOCINFOA), "printer", NULL };
+	float fZoom = (float)(nPaperSize / 58.0);
+	//打印字体，可自行设置
+	auto font = ::CreateFont((int)(36 * fZoom), (int)(13 * fZoom), 0, 0, 400, FALSE, FALSE, 0, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, _T("微软雅黑"));
+	::SelectObject(printerDC, font);
+	int x = (int)(20 * fZoom), y = (int)(20 * fZoom), nIndex = 0;
+	std::string sTextPrint;
+	TEXTMETRICA tm;
+	::GetTextMetricsA(printerDC, &tm);
+	if (StartDocA(printerDC, &di) > 0)
+	{
+		StartPage(printerDC);
+		SaveDC(printerDC);
+		while ((nIndex = sText.find("\n")) > -1)
+		{
+			sTextPrint = sText.substr(0, nIndex);
+			sText = sText.substr(nIndex + 1, sText.length());
+			TextOutA(printerDC, x, y, sTextPrint.c_str(), sTextPrint.length());
+			y += tm.tmHeight;
+		}
+
+		RestoreDC(printerDC, -1);
+		EndPage(printerDC);
+		EndDoc(printerDC);
+	}
+
+	DeleteObject(font);
+	DeleteDC(printerDC);
+	free(devmode);
+	ClosePrinter(hdl);
 	return true;
 }
